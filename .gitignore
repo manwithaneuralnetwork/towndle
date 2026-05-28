@@ -1,0 +1,4 @@
+.netlify/
+server.*.log
+codex/skills/
+

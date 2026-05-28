@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Towndle</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQqtfjto5Zj0pL8L7sG8s4pRIIFhpew="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <main class="app-shell">
+        <button class="home-button" type="button" @click="returnToMenu">HOME</button>
+
+        <section v-if="screen === 'menu'" class="menu-screen">
+          <p class="eyebrow">A daily world city guessing game</p>
+          <h1 class="menu-title">Towndle</h1>
+          <button class="primary-button large-button" type="button" @click="showDifficultySelect">
+            Play Daily
+          </button>
+          <p class="creator-credit">
+            Built by Alex Hansen | <a href="https://www.linkedin.com/in/alex-hansen-244282286/" target="_blank" rel="noreferrer">LinkedIn</a> | dyrekampen@gmail.com
+          </p>
+        </section>
+
+        <section v-if="screen === 'difficulty'" class="difficulty-screen">
+          <p class="eyebrow">Choose your daily challenge</p>
+          <h1 class="difficulty-title">Towndle</h1>
+          <div class="difficulty-list">
+            <div
+              v-for="difficulty in difficulties"
+              :key="difficulty.id"
+              class="difficulty-option"
+              :class="`difficulty-${difficulty.id}`"
+            >
+              <button
+                class="difficulty-button"
+                type="button"
+                @click="startGame(difficulty.id)"
+                :disabled="isLoading"
+              >
+                {{ isLoading && loadingDifficultyId === difficulty.id ? 'Loading...' : difficulty.label }}
+              </button>
+              <p class="difficulty-help">{{ difficulty.description }}</p>
+            </div>
+          </div>
+          <p v-if="hasLoadError" class="status-text error-text">
+            Could not load that city dataset. Start the app from a local server and try again.
+          </p>
+        </section>
+
+        <section v-if="screen === 'game'" class="game-screen">
+          <header class="game-header">
+            <div>
+              <h1 class="game-title">Towndle</h1>
+              <div class="round-row">
+                <p class="round-label">Round {{ roundNumber }} out of {{ gameLength }}</p>
+                <span class="difficulty-badge" :class="`difficulty-badge-${activeDifficulty.id}`">
+                  {{ activeDifficulty.label }}
+                </span>
+              </div>
+            </div>
+            <div class="score-pill">
+              <span>Total score</span>
+              <strong>{{ totalScore.toLocaleString() }}</strong>
+            </div>
+          </header>
+
+          <div class="map-card">
+            <div class="guess-panel">
+              <div class="coord-pill">
+                <span>LAT:</span>
+                <strong>{{ selectedLatDisplay }}</strong>
+              </div>
+              <div class="coord-pill">
+                <span>LON:</span>
+                <strong>{{ selectedLngDisplay }}</strong>
+              </div>
+            </div>
+            <div id="map" aria-label="World map for placing a city guess"></div>
+          </div>
+
+          <section class="city-card">
+            <div>
+              <span class="meta-label">City name</span>
+              <strong>{{ currentCity.name }}</strong>
+            </div>
+            <div>
+              <span class="meta-label">Country code</span>
+              <strong>{{ countryCodeDisplay }}</strong>
+            </div>
+            <div>
+              <span class="meta-label">Population</span>
+              <strong>{{ populationDisplay }}</strong>
+            </div>
+            <div>
+              <span class="meta-label">Elevation hint</span>
+              <strong>{{ elevationDisplay }}</strong>
+            </div>
+          </section>
+
+          <div v-if="roundSubmitted" class="result-banner">
+            <div>
+              <span class="meta-label">Round score</span>
+              <strong>{{ roundScore.toLocaleString() }} / 5,000</strong>
+            </div>
+            <div>
+              <span class="meta-label">Distance away</span>
+              <strong>{{ distanceDisplay }}</strong>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button
+              v-if="!roundSubmitted"
+              class="primary-button"
+              type="button"
+              @click="submitGuess"
+              :disabled="!hasGuess"
+            >
+              Submit Guess
+            </button>
+            <button
+              v-else
+              class="primary-button"
+              type="button"
+              @click="goToNextRound"
+            >
+              {{ isFinalRound ? 'View Final Score' : 'Next Round' }}
+            </button>
+          </div>
+        </section>
+
+        <section v-if="screen === 'end'" class="end-screen">
+          <p class="eyebrow">Game complete</p>
+          <h1 class="difficulty-title">Towndle</h1>
+          <div class="final-score">
+            <span>Final score</span>
+            <strong>{{ totalScore.toLocaleString() }} / {{ maxScore.toLocaleString() }}</strong>
+          </div>
+          <section class="histogram-panel">
+            <div class="histogram-header">
+              <div>
+                <h2>Today's Score Distribution</h2>
+                <span>{{ histogramDifficultyLabel }}</span>
+              </div>
+              <p>{{ scoreSyncStatus }}</p>
+            </div>
+            <div class="histogram-list" v-if="histogramBuckets.length">
+              <div
+                v-for="bucket in histogramBuckets"
+                :key="bucket.bucket_label"
+                class="histogram-row"
+                :class="{ 'is-highlighted': bucket.bucket_label === highlightedBucketLabel }"
+              >
+                <span class="histogram-label">{{ bucket.bucket_label }}</span>
+                <div class="histogram-track">
+                  <div class="histogram-bar" :style="getHistogramBarStyle(bucket)"></div>
+                </div>
+                <strong>{{ Number(bucket.submission_count).toLocaleString() }}</strong>
+              </div>
+            </div>
+          </section>
+          <div class="action-row stacked">
+            <button class="primary-button" type="button" @click="shareScore">
+              {{ shareLabel }}
+            </button>
+            <button class="secondary-button" type="button" @click="returnToMenu">
+              Return Home
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

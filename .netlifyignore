@@ -1,0 +1,7 @@
+.netlify/
+codex/
+py-tools/
+raw-datasets/
+server.*.log
+geonames-dataset-readme.txt
+
