@@ -118,6 +118,25 @@ button {
   text-underline-offset: 3px;
 }
 
+.menu-reset,
+.plays-today {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.menu-reset {
+  position: absolute;
+  top: 10px;
+}
+
+.plays-today {
+  margin-top: -10px;
+}
+
 .eyebrow,
 .round-label,
 .meta-label,

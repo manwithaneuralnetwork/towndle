@@ -75,6 +75,10 @@ createApp({
       histogramBuckets: [],
       scoreSyncStatus: "",
       isSyncingScore: false,
+      dailyPlayCount: null,
+      resetCountdown: "00:00:00",
+      resetTimerId: null,
+      lastDailyDateKey: "",
     };
   },
 
@@ -159,10 +163,26 @@ createApp({
     dailyDateKey() {
       return this.getDailyDateKey();
     },
+
+    dailyPlayCountDisplay() {
+      return this.dailyPlayCount === null ? "--" : this.dailyPlayCount.toLocaleString();
+    },
   },
 
   mounted() {
     this.isLoading = false;
+    this.lastDailyDateKey = this.getDailyDateKey();
+    this.updateResetCountdown();
+    this.loadDailyPlayCount();
+    this.resetTimerId = setInterval(() => {
+      const currentDailyDateKey = this.getDailyDateKey();
+      this.updateResetCountdown();
+      if (currentDailyDateKey !== this.lastDailyDateKey) {
+        this.lastDailyDateKey = currentDailyDateKey;
+        this.dailyPlayCount = null;
+        this.loadDailyPlayCount();
+      }
+    }, 1000);
   },
 
   methods: {
@@ -531,6 +551,7 @@ createApp({
     returnToMenu() {
       this.destroyMap();
       this.screen = "menu";
+      this.loadDailyPlayCount();
     },
 
     async syncFinalScore() {
@@ -540,6 +561,7 @@ createApp({
       try {
         const submitResult = await this.submitFinalScore();
         await this.loadScoreHistogram();
+        await this.loadDailyPlayCount();
         this.scoreSyncStatus = submitResult.counted
           ? "Your score was added to today's distribution."
           : "You already submitted this difficulty today. Showing today's distribution.";
@@ -578,14 +600,32 @@ createApp({
     },
 
     async loadScoreHistogram() {
+      this.histogramBuckets = await this.fetchScoreHistogram(this.activeDifficulty.id, this.getDailyDateKey());
+    },
+
+    async loadDailyPlayCount() {
+      try {
+        const histograms = await Promise.all(
+          this.difficulties.map((difficulty) => this.fetchScoreHistogram(difficulty.id, this.getDailyDateKey())),
+        );
+        this.dailyPlayCount = histograms
+          .flat()
+          .reduce((total, bucket) => total + (Number(bucket.submission_count) || 0), 0);
+      } catch (error) {
+        console.error(error);
+        this.dailyPlayCount = null;
+      }
+    },
+
+    async fetchScoreHistogram(difficultyId, dailyDateKey) {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_towndle_score_histogram`, {
         method: "POST",
         headers: this.getSupabaseHeaders({
           "Content-Type": "application/json",
         }),
         body: JSON.stringify({
-          p_game_date: this.getDailyDateKey(),
-          p_difficulty: this.activeDifficulty.id,
+          p_game_date: dailyDateKey,
+          p_difficulty: difficultyId,
         }),
       });
 
@@ -593,7 +633,7 @@ createApp({
         throw new Error(`Histogram request failed with ${response.status}`);
       }
 
-      this.histogramBuckets = await response.json();
+      return response.json();
     },
 
     getSupabaseHeaders(extraHeaders = {}) {
@@ -632,6 +672,66 @@ createApp({
       const month = partMap.month;
       const day = partMap.day;
       return `${year}-${month}-${day}`;
+    },
+
+    getNextDailyResetTime() {
+      const dateParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: DAILY_TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date());
+      const partMap = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
+      return this.getZonedDateTimeUtcMs(
+        Number(partMap.year),
+        Number(partMap.month),
+        Number(partMap.day) + 1,
+        0,
+        0,
+        0,
+        DAILY_TIME_ZONE,
+      );
+    },
+
+    getZonedDateTimeUtcMs(year, month, day, hour, minute, second, timeZone) {
+      const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+      const offset = this.getTimeZoneOffsetMs(new Date(utcGuess), timeZone);
+      return utcGuess - offset;
+    },
+
+    getTimeZoneOffsetMs(date, timeZone) {
+      const dateParts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).formatToParts(date);
+      const partMap = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
+      const zonedAsUtc = Date.UTC(
+        Number(partMap.year),
+        Number(partMap.month) - 1,
+        Number(partMap.day),
+        Number(partMap.hour),
+        Number(partMap.minute),
+        Number(partMap.second),
+      );
+      return zonedAsUtc - date.getTime();
+    },
+
+    updateResetCountdown() {
+      this.resetCountdown = this.formatDuration(Math.max(0, this.getNextDailyResetTime() - Date.now()));
+    },
+
+    formatDuration(durationMs) {
+      const totalSeconds = Math.floor(durationMs / 1000);
+      const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+      const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+      const seconds = String(totalSeconds % 60).padStart(2, "0");
+      return `${hours}:${minutes}:${seconds}`;
     },
 
     getScoreBucketLabel(score) {

@@ -10,7 +10,7 @@
       integrity="sha256-p4NxAoJBhIINfQqtfjto5Zj0pL8L7sG8s4pRIIFhpew="
       crossorigin=""
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260529" />
   </head>
   <body>
     <div id="app" v-cloak>
@@ -18,8 +18,10 @@
         <button class="home-button" type="button" @click="returnToMenu">HOME</button>
 
         <section v-if="screen === 'menu'" class="menu-screen">
+          <p class="menu-reset">RESETS IN {{ resetCountdown }}</p>
           <p class="eyebrow">A daily world city guessing game</p>
           <h1 class="menu-title">Towndle</h1>
+          <p class="plays-today">PLAYS TODAY: {{ dailyPlayCountDisplay }}</p>
           <button class="primary-button large-button" type="button" @click="showDifficultySelect">
             Play Daily
           </button>
@@ -184,6 +186,6 @@
       crossorigin=""
     ></script>
     <script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260529"></script>
   </body>
 </html>
