@@ -22,11 +22,92 @@
           <p class="eyebrow">A daily world city guessing game</p>
           <h1 class="menu-title">Towndle</h1>
           <p class="plays-today">DAILY PLAYERS: {{ dailyPlayCountDisplay }}</p>
-          <button class="primary-button large-button" type="button" @click="showDifficultySelect">
-            Play Daily
-          </button>
+          <div class="menu-actions">
+            <button class="primary-button large-button" type="button" @click="showDifficultySelect">
+              Play Daily
+            </button>
+            <button class="secondary-button large-button" type="button" @click="showCustomMenu">
+              Custom Challenges
+            </button>
+          </div>
           <p class="creator-credit">
             Built by Alex Hansen | <a href="https://www.linkedin.com/in/alex-hansen-244282286/" target="_blank" rel="noreferrer">LinkedIn</a> | dyrekampen@gmail.com
+          </p>
+        </section>
+
+        <section v-if="screen === 'custom-menu'" class="custom-screen">
+          <p class="eyebrow">Play with friends</p>
+          <h1 class="difficulty-title">Custom Challenges</h1>
+          <div class="custom-menu-grid">
+            <button class="primary-button large-button" type="button" @click="showCustomCreator">
+              Create Challenge
+            </button>
+            <div class="join-card">
+              <label for="challenge-code">Challenge code</label>
+              <div class="join-row">
+                <input
+                  id="challenge-code"
+                  v-model="customChallengeInput"
+                  type="text"
+                  maxlength="8"
+                  autocomplete="off"
+                  placeholder="AB12CD34"
+                  @input="customChallengeInput = normalizeCustomCode(customChallengeInput)"
+                />
+                <button class="primary-button" type="button" @click="startCustomChallengeByCode" :disabled="isLoading">
+                  Play
+                </button>
+              </div>
+              <p>{{ customChallengeStatus || 'Custom challenge codes expire after 3 days.' }}</p>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="screen === 'custom-create'" class="custom-screen">
+          <p class="eyebrow">Build a friend challenge</p>
+          <h1 class="difficulty-title">Custom Challenge</h1>
+          <div class="custom-builder">
+            <div class="option-group">
+              <span>Map size</span>
+              <div class="segmented-options">
+                <label v-for="dataset in datasetOptions" :key="dataset.id">
+                  <input v-model="customConfig.datasetId" type="radio" :value="dataset.id" />
+                  <span>{{ dataset.label }}</span>
+                </label>
+              </div>
+            </div>
+            <div class="option-group">
+              <span>Map type</span>
+              <div class="segmented-options">
+                <label v-for="mapStyle in mapStyleOptions" :key="mapStyle.id">
+                  <input v-model="customConfig.mapStyle" type="radio" :value="mapStyle.id" />
+                  <span>{{ mapStyle.label }}</span>
+                </label>
+              </div>
+            </div>
+            <div class="option-group">
+              <span>Available info</span>
+              <div class="checkbox-options">
+                <label>
+                  <input v-model="customConfig.hints.elevation" type="checkbox" />
+                  <span>Elevation</span>
+                </label>
+                <label>
+                  <input v-model="customConfig.hints.population" type="checkbox" />
+                  <span>Population</span>
+                </label>
+                <label>
+                  <input v-model="customConfig.hints.countryCode" type="checkbox" />
+                  <span>Country code</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <button class="primary-button large-button" type="button" @click="startCustomCreatorGame" :disabled="isLoading">
+            Generate Challenge
+          </button>
+          <p v-if="hasLoadError" class="status-text error-text">
+            Could not create that challenge. Try another setup.
           </p>
         </section>
 
@@ -62,8 +143,8 @@
               <h1 class="game-title">Towndle</h1>
               <div class="round-row">
                 <p class="round-label">Round {{ roundNumber }} out of {{ gameLength }}</p>
-                <span class="difficulty-badge" :class="`difficulty-badge-${activeDifficulty.id}`">
-                  {{ activeDifficulty.label }}
+                <span class="difficulty-badge" :class="gameBadgeClass">
+                  {{ gameLabel }}
                 </span>
               </div>
             </div>
@@ -145,7 +226,12 @@
             <span>Final score</span>
             <strong>{{ totalScore.toLocaleString() }} / {{ maxScore.toLocaleString() }}</strong>
           </div>
-          <section class="histogram-panel">
+          <section v-if="isCustomCreatorGame" class="custom-code-panel">
+            <span>Challenge code</span>
+            <strong>{{ customChallengeCode || 'Saving...' }}</strong>
+            <p>{{ customChallengeStatus || 'This custom challenge expires in 3 days.' }}</p>
+          </section>
+          <section v-if="isDailyGame" class="histogram-panel">
             <div class="histogram-header">
               <div>
                 <h2>Today's Score Distribution</h2>
@@ -169,7 +255,7 @@
             </div>
           </section>
           <div class="action-row stacked">
-            <button class="primary-button" type="button" @click="shareScore">
+            <button class="primary-button" type="button" @click="shareScore" :disabled="isCustomCreatorGame && !customChallengeCode">
               {{ shareLabel }}
             </button>
             <button class="secondary-button" type="button" @click="returnToMenu">

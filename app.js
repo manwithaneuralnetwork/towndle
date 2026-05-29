@@ -9,11 +9,44 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ZrrKYK0S_hwswfNB9gUzsw_JSOCWs-a
 const USER_ID_STORAGE_KEY = "towndle_user_id";
 const GAME_PROGRESS_STORAGE_KEY = "towndle_daily_progress";
 const DAILY_TIME_ZONE = "America/New_York";
+const CUSTOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const DATASET_OPTIONS = [
+  {
+    id: "100000",
+    label: "100k+",
+    datasetPath: "clean-datasets/cities100000.txt",
+  },
+  {
+    id: "250000",
+    label: "250k+",
+    datasetPath: "clean-datasets/cities250000.txt",
+  },
+  {
+    id: "1000000",
+    label: "1M+",
+    datasetPath: "clean-datasets/cities1000000.txt",
+  },
+];
+const MAP_STYLE_OPTIONS = [
+  {
+    id: "english",
+    label: "English",
+  },
+  {
+    id: "local",
+    label: "Local",
+  },
+  {
+    id: "blank",
+    label: "No labels",
+  },
+];
 const DIFFICULTIES = [
   {
     id: "standard",
     label: "Standard",
     description: "1M+ Cities. English map labels. You get population, elevation, and country code.",
+    datasetId: "1000000",
     datasetPath: "clean-datasets/cities1000000.txt",
     mapStyle: "english",
     hints: {
@@ -26,6 +59,7 @@ const DIFFICULTIES = [
     id: "hard",
     label: "Hard",
     description: "250k+ Cities. Local map labels. You get population and elevation.",
+    datasetId: "250000",
     datasetPath: "clean-datasets/cities250000.txt",
     mapStyle: "local",
     hints: {
@@ -38,6 +72,7 @@ const DIFFICULTIES = [
     id: "impossible",
     label: "Impossible",
     description: "100k+ Cities. No map labels. You get no help of any kind.",
+    datasetId: "100000",
     datasetPath: "clean-datasets/cities100000.txt",
     mapStyle: "blank",
     hints: {
@@ -79,6 +114,21 @@ createApp({
       resetCountdown: "00:00:00",
       resetTimerId: null,
       lastDailyDateKey: "",
+      gameMode: "daily",
+      customConfig: {
+        datasetId: "250000",
+        mapStyle: "local",
+        hints: {
+          elevation: true,
+          population: true,
+          countryCode: false,
+        },
+      },
+      activeCustomConfig: null,
+      customChallengeCode: "",
+      customChallengeInput: "",
+      customChallengeStatus: "",
+      isSavingCustomChallenge: false,
     };
   },
 
@@ -98,8 +148,20 @@ createApp({
       return DIFFICULTIES;
     },
 
+    datasetOptions() {
+      return DATASET_OPTIONS;
+    },
+
+    mapStyleOptions() {
+      return MAP_STYLE_OPTIONS;
+    },
+
     activeDifficulty() {
       return this.difficulties.find((difficulty) => difficulty.id === this.activeDifficultyId) ?? this.difficulties[0];
+    },
+
+    activeGameConfig() {
+      return this.activeCustomConfig ?? this.activeDifficulty;
     },
 
     roundNumber() {
@@ -127,15 +189,15 @@ createApp({
     },
 
     countryCodeDisplay() {
-      return this.activeDifficulty.hints.countryCode ? this.currentCity.countryCode : "?";
+      return this.activeGameConfig.hints.countryCode ? this.currentCity.countryCode : "?";
     },
 
     populationDisplay() {
-      return this.activeDifficulty.hints.population ? this.currentCity.population.toLocaleString() : "?";
+      return this.activeGameConfig.hints.population ? this.currentCity.population.toLocaleString() : "?";
     },
 
     elevationDisplay() {
-      if (!this.activeDifficulty.hints.elevation) {
+      if (!this.activeGameConfig.hints.elevation) {
         return "?";
       }
 
@@ -154,6 +216,42 @@ createApp({
 
     histogramDifficultyLabel() {
       return `${this.activeDifficulty.label} - ${this.dailyDateKey}`;
+    },
+
+    gameLabel() {
+      if (this.gameMode === "custom-create") {
+        return "Custom";
+      }
+
+      if (this.gameMode === "custom-play") {
+        return `Custom ${this.customChallengeCode}`;
+      }
+
+      return this.activeDifficulty.label;
+    },
+
+    gameBadgeClass() {
+      return this.gameMode === "daily" ? `difficulty-badge-${this.activeDifficulty.id}` : "difficulty-badge-custom";
+    },
+
+    isDailyGame() {
+      return this.gameMode === "daily";
+    },
+
+    isCustomGame() {
+      return this.gameMode !== "daily";
+    },
+
+    isCustomCreatorGame() {
+      return this.gameMode === "custom-create";
+    },
+
+    customDatasetLabel() {
+      return this.datasetOptions.find((option) => option.id === this.customConfig.datasetId)?.label ?? "";
+    },
+
+    customMapStyleLabel() {
+      return this.mapStyleOptions.find((option) => option.id === this.customConfig.mapStyle)?.label ?? "";
     },
 
     maxHistogramCount() {
@@ -215,6 +313,22 @@ createApp({
       this.screen = "difficulty";
     },
 
+    showCustomMenu() {
+      this.hasLoadError = false;
+      this.customChallengeStatus = "";
+      this.screen = "custom-menu";
+    },
+
+    showCustomCreator() {
+      this.hasLoadError = false;
+      this.customChallengeStatus = "";
+      this.screen = "custom-create";
+    },
+
+    getDatasetOption(datasetId) {
+      return this.datasetOptions.find((option) => option.id === datasetId) ?? this.datasetOptions[0];
+    },
+
     async startGame(difficultyId) {
       if (this.isLoading) {
         return;
@@ -228,6 +342,9 @@ createApp({
         const cities = await this.getCitiesForDifficulty(difficultyId);
         const savedProgress = this.getSavedProgress(difficultyId);
         this.destroyMap();
+        this.gameMode = "daily";
+        this.activeCustomConfig = null;
+        this.customChallengeCode = "";
         this.activeDifficultyId = difficultyId;
         this.rounds = this.pickDailyCities(cities, this.gameLength, difficultyId);
         this.currentRoundIndex = savedProgress?.currentRoundIndex ?? 0;
@@ -277,6 +394,28 @@ createApp({
       return cities;
     },
 
+    async getCitiesForDataset(datasetId) {
+      const cacheKey = `dataset:${datasetId}`;
+      if (this.cityCache[cacheKey]) {
+        return this.cityCache[cacheKey];
+      }
+
+      const dataset = this.getDatasetOption(datasetId);
+      const response = await fetch(this.getDatasetUrl(dataset.datasetPath));
+      if (!response.ok) {
+        throw new Error(`Dataset request failed with ${response.status}`);
+      }
+
+      const text = await response.text();
+      const cities = this.parseCities(text);
+      if (cities.length < this.gameLength) {
+        throw new Error("Not enough cities to start a game");
+      }
+
+      this.cityCache[cacheKey] = cities;
+      return cities;
+    },
+
     getDatasetUrl(datasetPath) {
       return `${DATASET_BASE_URL}${datasetPath}`;
     },
@@ -290,6 +429,86 @@ createApp({
       }
 
       return [...selectedIndexes].map((index) => cities[index]);
+    },
+
+    pickRandomCityIndexes(cities, count) {
+      const selectedIndexes = new Set();
+      while (selectedIndexes.size < count) {
+        selectedIndexes.add(Math.floor(Math.random() * cities.length));
+      }
+      return [...selectedIndexes];
+    },
+
+    startCustomChallengeFromIndexes(config, cities, cityIndexes, mode, code = "") {
+      this.destroyMap();
+      this.gameMode = mode;
+      this.activeDifficultyId = "standard";
+      this.activeCustomConfig = config;
+      this.customChallengeCode = code;
+      this.rounds = cityIndexes.map((index) => cities[index]);
+      this.currentRoundIndex = 0;
+      this.totalScore = 0;
+      this.shareLabel = "Share";
+      this.histogramBuckets = [];
+      this.scoreSyncStatus = "";
+      this.resetRoundState();
+      this.screen = "game";
+      this.$nextTick(() => this.initMap());
+    },
+
+    async startCustomCreatorGame() {
+      if (this.isLoading) {
+        return;
+      }
+
+      this.hasLoadError = false;
+      this.customChallengeStatus = "";
+      this.isLoading = true;
+
+      try {
+        const cities = await this.getCitiesForDataset(this.customConfig.datasetId);
+        const cityIndexes = this.pickRandomCityIndexes(cities, this.gameLength);
+        const config = {
+          datasetId: this.customConfig.datasetId,
+          mapStyle: this.customConfig.mapStyle,
+          hints: { ...this.customConfig.hints },
+          cityIndexes,
+        };
+        this.startCustomChallengeFromIndexes(config, cities, cityIndexes, "custom-create");
+      } catch (error) {
+        console.error(error);
+        this.hasLoadError = true;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    async startCustomChallengeByCode() {
+      if (this.isLoading) {
+        return;
+      }
+
+      const code = this.normalizeCustomCode(this.customChallengeInput);
+      if (!code) {
+        this.customChallengeStatus = "Enter a challenge code.";
+        return;
+      }
+
+      this.hasLoadError = false;
+      this.customChallengeStatus = "Loading challenge...";
+      this.isLoading = true;
+
+      try {
+        const challenge = await this.fetchCustomChallenge(code);
+        const config = this.getCustomConfigFromChallenge(challenge);
+        const cities = await this.getCitiesForDataset(config.datasetId);
+        this.startCustomChallengeFromIndexes(config, cities, config.cityIndexes, "custom-play", challenge.code);
+      } catch (error) {
+        console.error(error);
+        this.customChallengeStatus = "That challenge was not found or has expired.";
+      } finally {
+        this.isLoading = false;
+      }
     },
 
     createSeededRandom(seedText) {
@@ -326,7 +545,7 @@ createApp({
     },
 
     getMapLayerConfig() {
-      if (this.activeDifficulty.mapStyle === "english") {
+      if (this.activeGameConfig.mapStyle === "english") {
         return {
           url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
           options: {
@@ -337,7 +556,7 @@ createApp({
         };
       }
 
-      if (this.activeDifficulty.mapStyle === "blank") {
+      if (this.activeGameConfig.mapStyle === "blank") {
         return {
           url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
           options: {
@@ -395,7 +614,9 @@ createApp({
       this.totalScore += this.roundScore;
       this.roundSubmitted = true;
       this.showAnswer();
-      this.saveProgress();
+      if (this.isDailyGame) {
+        this.saveProgress();
+      }
     },
 
     showAnswer() {
@@ -439,14 +660,20 @@ createApp({
       if (this.isFinalRound) {
         this.destroyMap();
         this.screen = "end";
-        this.clearSavedProgress(this.activeDifficulty.id);
-        this.syncFinalScore();
+        if (this.isDailyGame) {
+          this.clearSavedProgress(this.activeDifficulty.id);
+          this.syncFinalScore();
+        } else if (this.isCustomCreatorGame) {
+          this.createCustomChallenge();
+        }
         return;
       }
 
       this.currentRoundIndex += 1;
       this.resetRoundState();
-      this.saveProgress();
+      if (this.isDailyGame) {
+        this.saveProgress();
+      }
       this.$nextTick(() => {
         this.clearMapLayers();
         this.map.setView([20, 0], 2);
@@ -535,11 +762,7 @@ createApp({
     },
 
     async shareScore() {
-      const text = [
-        `Towndle ${this.dailyDateKey}`,
-        `${this.activeDifficulty.label}: ${this.totalScore.toLocaleString()} / ${this.maxScore.toLocaleString()}`,
-        "https://towndle-game.netlify.app",
-      ].join("\n");
+      const text = this.getShareText();
       try {
         await navigator.clipboard.writeText(text);
         this.shareLabel = "Copied";
@@ -550,6 +773,23 @@ createApp({
       setTimeout(() => {
         this.shareLabel = "Share";
       }, 1600);
+    },
+
+    getShareText() {
+      if (this.isCustomGame) {
+        const code = this.customChallengeCode || "CUSTOM";
+        return [
+          `Towndle Custom ${code}`,
+          `Score: ${this.totalScore.toLocaleString()} / ${this.maxScore.toLocaleString()}`,
+          "https://towndle-game.netlify.app",
+        ].join("\n");
+      }
+
+      return [
+        `Towndle ${this.dailyDateKey}`,
+        `${this.activeDifficulty.label}: ${this.totalScore.toLocaleString()} / ${this.maxScore.toLocaleString()}`,
+        "https://towndle-game.netlify.app",
+      ].join("\n");
     },
 
     returnToMenu() {
@@ -601,6 +841,92 @@ createApp({
       }
 
       throw new Error(`Score submission failed with ${response.status}`);
+    },
+
+    async createCustomChallenge() {
+      if (!this.activeCustomConfig?.cityIndexes?.length || this.customChallengeCode) {
+        return;
+      }
+
+      this.customChallengeStatus = "Saving custom challenge...";
+      this.isSavingCustomChallenge = true;
+
+      try {
+        const challenge = await this.insertCustomChallengeWithRetry();
+        this.customChallengeCode = challenge.code;
+        this.customChallengeStatus = "Challenge saved. This code expires in 3 days.";
+      } catch (error) {
+        console.error(error);
+        this.customChallengeStatus = "Could not save this custom challenge right now.";
+      } finally {
+        this.isSavingCustomChallenge = false;
+      }
+    },
+
+    async insertCustomChallengeWithRetry() {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const code = this.generateCustomCode();
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/custom_challenges`, {
+          method: "POST",
+          headers: this.getSupabaseHeaders({
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          }),
+          body: JSON.stringify({
+            code,
+            dataset_id: this.activeCustomConfig.datasetId,
+            map_style: this.activeCustomConfig.mapStyle,
+            show_elevation: this.activeCustomConfig.hints.elevation,
+            show_population: this.activeCustomConfig.hints.population,
+            show_country_code: this.activeCustomConfig.hints.countryCode,
+            city_indices: this.activeCustomConfig.cityIndexes,
+          }),
+        });
+
+        if (response.ok) {
+          const [challenge] = await response.json();
+          return challenge;
+        }
+
+        if (response.status !== 409) {
+          throw new Error(`Custom challenge save failed with ${response.status}`);
+        }
+      }
+
+      throw new Error("Could not generate a unique custom challenge code");
+    },
+
+    async fetchCustomChallenge(code) {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/custom_challenges?code=eq.${encodeURIComponent(code)}&select=*`,
+        {
+          headers: this.getSupabaseHeaders(),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Custom challenge fetch failed with ${response.status}`);
+      }
+
+      const [challenge] = await response.json();
+      if (!challenge) {
+        throw new Error("Custom challenge not found");
+      }
+
+      return challenge;
+    },
+
+    getCustomConfigFromChallenge(challenge) {
+      return {
+        datasetId: challenge.dataset_id,
+        mapStyle: challenge.map_style,
+        hints: {
+          elevation: challenge.show_elevation,
+          population: challenge.show_population,
+          countryCode: challenge.show_country_code,
+        },
+        cityIndexes: challenge.city_indices,
+      };
     },
 
     async loadScoreHistogram() {
@@ -662,6 +988,27 @@ createApp({
             );
       localStorage.setItem(USER_ID_STORAGE_KEY, newUserId);
       return newUserId;
+    },
+
+    generateCustomCode() {
+      let code = "";
+      const randomValues = new Uint32Array(8);
+      if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+        crypto.getRandomValues(randomValues);
+        for (const value of randomValues) {
+          code += CUSTOM_CODE_CHARS[value % CUSTOM_CODE_CHARS.length];
+        }
+        return code;
+      }
+
+      for (let i = 0; i < 8; i += 1) {
+        code += CUSTOM_CODE_CHARS[Math.floor(Math.random() * CUSTOM_CODE_CHARS.length)];
+      }
+      return code;
+    },
+
+    normalizeCustomCode(code) {
+      return code.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
     },
 
     getDailyDateKey() {
