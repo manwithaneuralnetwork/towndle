@@ -18,10 +18,10 @@
         <button class="home-button" type="button" @click="returnToMenu">HOME</button>
 
         <section v-if="screen === 'menu'" class="menu-screen">
-          <p class="menu-reset">RESETS IN {{ resetCountdown }}</p>
+          <p class="menu-reset">NEW CHALLENGES IN {{ resetCountdown }}</p>
           <p class="eyebrow">A daily world city guessing game</p>
           <h1 class="menu-title">Towndle</h1>
-          <p class="plays-today">PLAYS TODAY: {{ dailyPlayCountDisplay }}</p>
+          <p class="plays-today">DAILY PLAYERS: {{ dailyPlayCountDisplay }}</p>
           <button class="primary-button large-button" type="button" @click="showDifficultySelect">
             Play Daily
           </button>

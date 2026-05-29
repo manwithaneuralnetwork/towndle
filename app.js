@@ -535,7 +535,11 @@ createApp({
     },
 
     async shareScore() {
-      const text = `Towndle: ${this.totalScore.toLocaleString()} / ${this.maxScore.toLocaleString()}`;
+      const text = [
+        `Towndle ${this.dailyDateKey}`,
+        `${this.activeDifficulty.label}: ${this.totalScore.toLocaleString()} / ${this.maxScore.toLocaleString()}`,
+        "https://towndle-game.netlify.app",
+      ].join("\n");
       try {
         await navigator.clipboard.writeText(text);
         this.shareLabel = "Copied";
